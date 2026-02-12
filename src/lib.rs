@@ -1,0 +1,23 @@
+pub mod compose;
+pub mod down;
+pub mod error;
+pub mod event;
+pub mod graph;
+pub mod lifecycle;
+pub mod logs;
+pub mod model;
+pub mod ops;
+pub mod parse;
+pub mod project;
+pub mod ps;
+pub mod up;
+
+pub use compose::ComposeManager;
+pub use down::DownOptions;
+pub use error::{ComposeError, Result};
+pub use graph::DependencyGraph;
+pub use logs::LogsOptions;
+pub use model::ComposeConfig;
+pub use project::Project;
+pub use ps::ServiceStatus;
+pub use up::UpOptions;
