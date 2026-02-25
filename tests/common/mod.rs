@@ -7,6 +7,7 @@ use bollard::container::LogOutput;
 use bollard::exec::{CreateExecOptions, StartExecResults};
 use bollard::models::ContainerInspectResponse;
 use bollard::Docker;
+use futures_util::StreamExt;
 use futures_util::TryStreamExt;
 
 use bollard_compose::ComposeManager;
@@ -163,5 +164,80 @@ pub async fn wait_for_running(
             }
         }
         tokio::time::sleep(Duration::from_millis(250)).await;
+    }
+}
+
+/// Poll by executing `cmd` inside `container_id` until it exits with code 0.
+///
+/// Returns the stdout/stderr output of the successful execution.
+/// Panics if the timeout is exceeded.
+pub async fn wait_for_exec_success(
+    docker: &Docker,
+    container_id: &str,
+    cmd: Vec<&str>,
+    timeout: Duration,
+) -> String {
+    let start = std::time::Instant::now();
+    let label = cmd.join(" ");
+    loop {
+        if start.elapsed() > timeout {
+            panic!(
+                "Timed out waiting for exec success in '{container_id}': {label}"
+            );
+        }
+
+        let exec = docker
+            .create_exec(
+                container_id,
+                CreateExecOptions {
+                    attach_stdout: Some(true),
+                    attach_stderr: Some(true),
+                    cmd: Some(cmd.clone()),
+                    ..Default::default()
+                },
+            )
+            .await;
+
+        let exec = match exec {
+            Ok(e) => e,
+            Err(_) => {
+                tokio::time::sleep(Duration::from_secs(2)).await;
+                continue;
+            }
+        };
+
+        let result = docker.start_exec(&exec.id, None).await;
+        let output = match result {
+            Ok(StartExecResults::Attached { output, .. }) => {
+                let mut buf = String::new();
+                let items: Vec<_> = output.collect().await;
+                for item in items {
+                    match item {
+                        Ok(LogOutput::StdOut { message }) => {
+                            buf.push_str(&String::from_utf8_lossy(&message));
+                        }
+                        Ok(LogOutput::StdErr { message }) => {
+                            buf.push_str(&String::from_utf8_lossy(&message));
+                        }
+                        _ => {}
+                    }
+                }
+                buf
+            }
+            Ok(StartExecResults::Detached) => String::new(),
+            Err(_) => {
+                tokio::time::sleep(Duration::from_secs(2)).await;
+                continue;
+            }
+        };
+
+        // Check exit code
+        if let Ok(inspect) = docker.inspect_exec(&exec.id).await {
+            if inspect.exit_code == Some(0) {
+                return output;
+            }
+        }
+
+        tokio::time::sleep(Duration::from_secs(2)).await;
     }
 }
