@@ -19,6 +19,7 @@ thiserror = "2"
 tracing = "0.1"
 sha2 = "0.10"
 shell-words = "1"
+regex = "1.13.1"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full", "test-util"] }

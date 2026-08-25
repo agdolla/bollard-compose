@@ -116,6 +116,7 @@ mod tests {
             logging: LoggingConfig::default(),
             labels: std::collections::HashMap::new(),
             depends_on: vec![],
+            healthcheck: None,
         }
     }
 

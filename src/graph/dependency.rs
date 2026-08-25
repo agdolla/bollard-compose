@@ -217,6 +217,7 @@ mod tests {
                     logging: LoggingConfig::default(),
                     labels: HashMap::new(),
                     depends_on: deps.iter().map(|s| s.to_string()).collect(),
+                    healthcheck: None,
                 },
             );
         }

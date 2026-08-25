@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-use super::types::{LoggingConfig, PortMapping, RestartPolicyConfig, VolumeMount};
+use super::types::{HealthcheckConfig, LoggingConfig, PortMapping, RestartPolicyConfig, VolumeMount};
 
 /// Resolved service configuration, ready for container creation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -35,6 +35,7 @@ pub struct ServiceConfig {
     pub labels: HashMap<String, String>,
     /// Services this service depends on (for dependency ordering).
     pub depends_on: Vec<String>,
+    pub healthcheck: Option<HealthcheckConfig>,
 }
 
 impl ServiceConfig {

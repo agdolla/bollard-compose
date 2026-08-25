@@ -5,6 +5,7 @@ use bollard::models::{
     HostConfigLogConfig, NetworkingConfig, PortBinding, PortMap, RestartPolicy,
     RestartPolicyNameEnum,
 };
+use bollard::plugin::HealthConfig;
 use bollard::query_parameters::{
     CreateContainerOptions, ListContainersOptions, RemoveContainerOptions, StopContainerOptions,
 };
@@ -118,6 +119,21 @@ pub async fn create_container(
         endpoints_config: Some(endpoints_config),
     };
 
+    let health_config: Option<HealthConfig> = if !service.healthcheck.is_none() {
+        let hc = service.healthcheck.clone().unwrap();
+        let test: Vec<String>  = vec!["CMD-SHELL".to_string(), hc.test];
+        Some(HealthConfig {
+            test: Some(test),
+            interval: Some(hc.interval),
+            timeout: Some(hc.timeout),
+            retries: Some(hc.retries),
+            start_period: Some(hc.start_period),
+            start_interval: Some(hc.start_interval),
+        })
+    } else {
+        None
+    };
+
     let body = ContainerCreateBody {
         image: service.image.clone(),
         hostname: service.hostname.clone(),
@@ -131,6 +147,7 @@ pub async fn create_container(
         labels: Some(all_labels),
         host_config: Some(host_config),
         networking_config: Some(networking_config),
+        healthcheck: health_config,
         ..Default::default()
     };
 

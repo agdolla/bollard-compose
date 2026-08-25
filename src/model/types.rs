@@ -71,3 +71,13 @@ pub struct LoggingConfig {
     pub driver: Option<String>,
     pub options: HashMap<String, String>,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HealthcheckConfig {
+    pub test: String,
+    pub interval: i64,
+    pub start_period: i64,
+    pub start_interval: i64,
+    pub timeout: i64,
+    pub retries: i64,
+}

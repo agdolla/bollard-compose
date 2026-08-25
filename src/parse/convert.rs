@@ -1,8 +1,10 @@
 use std::collections::HashMap;
 use std::path::Path;
+use regex::Regex;
 
+use docker_compose_types::HealthcheckTest::{Multiple, Single};
 use docker_compose_types::{
-    AdvancedNetworks, AdvancedVolumes, Command, Compose, DependsOnOptions, Environment, Labels,
+    AdvancedNetworks, AdvancedVolumes, Command, Compose, DependsOnOptions, Environment, Healthcheck, Labels,
     LoggingParameters, MapOrEmpty, NetworkSettings, Networks, Port, Ports, PublishedPort,
     SingleValue, Volumes,
 };
@@ -12,7 +14,7 @@ use crate::error::{ComposeError, Result};
 use crate::model::network::NetworkConfig;
 use crate::model::service::ServiceConfig;
 use crate::model::types::{
-    LoggingConfig, MountType, PortMapping, RestartPolicyConfig, VolumeMount,
+    HealthcheckConfig, LoggingConfig, MountType, PortMapping, RestartPolicyConfig, VolumeMount,
 };
 use crate::model::{ComposeConfig, VolumeConfig};
 
@@ -60,12 +62,36 @@ fn convert_services(
             logging: convert_logging(&svc.logging),
             labels: convert_labels(&svc.labels),
             depends_on: convert_depends_on(&svc.depends_on),
+            healthcheck: convert_healthcheck(&svc.healthcheck),
         };
 
         services.insert(name.clone(), config);
     }
 
     Ok(services)
+}
+
+pub fn convert_healthcheck(healthcheck: &Option<Healthcheck>) -> Option<HealthcheckConfig> {
+    if healthcheck.is_none() {
+        return None;
+    }
+    let hc = healthcheck.clone().unwrap();
+    let ht = hc.test.unwrap();
+    #[allow(non_snake_case)]
+    let test = match ht {
+        Single(cmd) => cmd.to_string(),
+        Multiple(vec)=> vec.join(" "),
+    };
+
+    // in nanosec, min: 1000000
+    Some(HealthcheckConfig {
+        test,
+        interval: convert_duration(hc.interval),
+        timeout: convert_duration(hc.timeout),
+        retries: hc.retries,
+        start_period: convert_duration(hc.start_period),
+        start_interval: convert_duration(hc.start_interval),
+    })
 }
 
 /// Convert docker_compose_types Command to Vec<String>.
@@ -437,9 +463,56 @@ fn convert_volumes(compose: &Compose) -> IndexMap<String, VolumeConfig> {
     volumes
 }
 
+/// Values express a duration as a string in the form of {value}{unit}. The supported units are us (microseconds), ms (milliseconds), s (seconds), m (minutes) and h (hours).
+/// Values can combine multiple values without separator.
+/// 1h5m30s20ms
+fn convert_duration(v: Option<String>) -> i64 {
+    if v.is_none() {
+        return 0;
+    }
+    let mut result_nanosec: i64 = 0;
+    let re = Regex::new(r"(\d+[a-z]{1,2})").unwrap();
+    let haystack = &v.unwrap();
+    let iter = re.captures_iter(haystack);
+    for c in iter {
+        let mut s = c.get_match().as_str().to_string();
+        let unit = if s.ends_with("us") || s.ends_with("ms") {
+            let l2 = s.pop().unwrap();
+            let l1 = s.pop().unwrap();
+            format!("{}{}", l1, l2).to_string()
+        } else {
+            s.pop().unwrap().to_string()
+        };
+        let num = s.parse::<i64>().unwrap();
+        let d = match unit.as_str() {
+            "us" => num * 1000,
+            "ms" => num * 1000000,
+            "s" => num * 1000000000,
+            "m" => num * 1000000000 * 60,
+            "h" => num * 1000000000 * 3600,
+            _ => 0, // TODO handle wrong suffix
+        };
+        result_nanosec += d;
+    }
+
+    result_nanosec
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_convert_duration() {
+        assert_eq!(convert_duration(None), 0);
+        assert_eq!(convert_duration(Some("20us".to_string())), 20 * 1000);
+        assert_eq!(convert_duration(Some("20ms".to_string())), 20 * 1000000);
+        assert_eq!(convert_duration(Some("20ms30us".to_string())), 20 * 1000000 + 30 * 1000);
+        assert_eq!(convert_duration(Some("20s".to_string())), 20 * 1000000000);
+        assert_eq!(convert_duration(Some("20m".to_string())), 20 * 60 * 1000000000);
+        assert_eq!(convert_duration(Some("20h".to_string())), 20 * 60 * 60 * 1000000000);
+        assert_eq!(convert_duration(Some("1h5m30s20ms".to_string())), 1 * 60 * 60 * 1000000000 + 5 * 60 * 1000000000 + 30 * 1000000000 + 20 * 1000000);
+    }
 
     #[test]
     fn test_convert_command_simple() {
